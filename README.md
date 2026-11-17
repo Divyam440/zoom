@@ -19,6 +19,22 @@ Turns a manually copied ZoomInfo profile into one clean Excel row.
 Prefer to copy yourself? Set `AUTO_COPY = False` at the top of the script, then
 press Ctrl+A, Ctrl+C before the hotkey. `POPUP = False` turns the popup off.
 
+## LinkedIn URL of the person
+1. Capture the ZoomInfo profile as usual (**Ctrl+Alt+Z**).
+2. If "POC Linkedin Url" is listed under Missing Fields, click the LinkedIn icon on
+   the ZoomInfo profile. LinkedIn opens in a new tab.
+3. On that LinkedIn tab press **Ctrl+Alt+Z again** (the same hotkey: on a LinkedIn tab
+   it saves the URL, anywhere else it captures the profile; Ctrl+Alt+L also works).
+   The tool copies the tab's address,
+   writes it into that person's row (the one captured last), and removes
+   "POC Linkedin Url" from Missing Fields (the yellow goes away when nothing else is missing).
+- Works with the Excel file open or closed.
+- It only reads the address bar of the tab you are looking at. It never reads the LinkedIn page.
+- Safety: if the tab does not look like that person (name not in the tab title or URL),
+  nothing is saved; press the hotkey again within 30 seconds to save it anyway.
+- A link taken from the ZoomInfo copy is only accepted when it contains the person's
+  name, so a "Similar Contacts" link can never land in the wrong row.
+
 ## Duplicate pre-check (saves view credits)
 Do this BEFORE opening profiles, because opening a profile uses a view credit.
 1. Open your saved search (results list).

@@ -26,6 +26,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 from urllib.parse import unquote
 
 # ----------------------------------------------------------------------
@@ -33,6 +34,7 @@ from urllib.parse import unquote
 # ----------------------------------------------------------------------
 HOTKEY = "ctrl+alt+z"              # capture a profile
 PRECHECK_HOTKEY = "ctrl+alt+x"     # check a search-results page for duplicates
+LINKEDIN_HOTKEY = "ctrl+alt+l"     # on the person's LinkedIn tab: save its URL into their row
 AUTO_COPY = True                   # hotkey presses Ctrl+A, Ctrl+C itself (False = you copy first)
 COPY_TIMEOUT = 2.0                 # seconds to wait for the copy to land on the clipboard
 POPUP = True                       # small on-screen popup instead of watching the console
@@ -52,6 +54,7 @@ HEADERS = [
 IMPORTANT_FIELDS = [
     "Company Name", "Employees", "Industry", "Website", "Company Linkedin Url",
     "POC", "Job title", "Email ID", "Company Country", "Company Phone",
+    "POC Linkedin Url",
 ]
 
 # ----------------------------------------------------------------------
@@ -64,8 +67,13 @@ DOMAIN_RE = re.compile(r"^(https?://)?(www\.)?[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+(
 EMPLOYEES_RE = re.compile(r"\d[\d,]*\s*(-|–|to)?\s*[\d,]*\+?")
 LI_PERSON_RE = re.compile(r"linkedin\.com/in/[^\s\"'&?#<>]+", re.I)
 LI_COMPANY_RE = re.compile(r"linkedin\.com/company/[^\s\"'&?#<>]+", re.I)
+LI_COMPANY_ADDRESS_RE = re.compile(
+    r"(?:https?://)?(?:[a-z0-9-]+\.)?linkedin\.com/(?:company|school)/([^/?#\s\"'<>]+)", re.I)
+LI_ADDRESS_RE = re.compile(r"(?:https?://)?(?:[a-z0-9-]+\.)?linkedin\.com/in/([^/?#\s\"'<>]+)", re.I)
 
 SESSION_KEYS = set()   # (poc, company) captured this session, for duplicate checks
+LAST_CAPTURE = {}      # the person captured last: key, poc, company
+_LI_REFUSED = {}       # last LinkedIn URL that did not look like LAST_CAPTURE's person
 
 # Words that are UI labels, never real values
 UI_LABELS = {
@@ -250,11 +258,47 @@ def parse_country(lines):
     return re.sub(r"\d", "", last).strip(" -") or last
 
 
-def parse_linkedin(html, text):
-    """Returns (person_url, company_url). Uses the first match on the page,
-    which is the profile header (Similar Contacts come later)."""
+def _fold(s):
+    """Lower-case, accents removed, letters/digits only, split into words."""
+    s = unicodedata.normalize("NFKD", s or "")
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
+    return re.findall(r"[a-z0-9]+", s)
+
+
+def linkedin_matches_name(name, text):
+    """True if any word (3+ letters) of `name` appears as a word in `text`
+    (a LinkedIn URL or a browser tab title). Names we cannot compare (e.g. Arabic
+    script) return True, because there is nothing to check against."""
+    tokens = [t for t in _fold(name) if len(t) >= 3 and not t.isdigit()]
+    if not tokens:
+        return True
+    words = set(_fold(text))
+    return any(t in words for t in tokens)
+
+
+def normalize_linkedin_url(raw):
+    """Any text containing a linkedin.com/in/... link -> clean profile URL, else ''."""
+    m = LI_ADDRESS_RE.search((raw or "").strip())
+    return "https://www.linkedin.com/in/" + m.group(1) if m else ""
+
+
+def normalize_linkedin_company_url(raw):
+    """Any text containing a linkedin.com/company/... link -> clean company URL, else ''."""
+    m = LI_COMPANY_ADDRESS_RE.search((raw or "").strip())
+    return "https://www.linkedin.com/company/" + m.group(1) if m else ""
+
+
+def parse_linkedin(html, text, name=""):
+    """Returns (person_url, company_url). With `name`, the person URL must contain
+    one of the person's name words, so a Similar Contacts link can never be taken
+    for the profile owner. An empty person URL is then filled in later with the
+    LinkedIn hotkey."""
     blob = unquote(html or "") + "\n" + (text or "")
-    person = LI_PERSON_RE.search(blob)
+    person = None
+    for m in LI_PERSON_RE.finditer(blob):
+        if not name or linkedin_matches_name(name, m.group(0)):
+            person = m
+            break
     company = LI_COMPANY_RE.search(blob)
     def norm(m):
         if not m:
@@ -275,7 +319,7 @@ def parse_profile(text, html=""):
     email = parse_email(lines, website)
     hq_phone, mobile = parse_phones(lines)
     country = parse_country(lines)
-    li_person, li_company = parse_linkedin(html, text)
+    li_person, li_company = parse_linkedin(html, text, name)
 
     row = {
         "Company Name": company,
@@ -429,6 +473,127 @@ def write_rows_any(rows, path=OUTPUT_FILE):
         raise PermissionError(str(e))
 
 
+def _missing_of(row):
+    return ", ".join(f for f in IMPORTANT_FIELDS if not str(row.get(f) or "").strip())
+
+
+def _update_in_file(key, updates, path):
+    """Change fields of the row `key` in the closed file. LookupError if not found;
+    PermissionError if Excel has the file open."""
+    from openpyxl import load_workbook
+    from openpyxl.styles import PatternFill
+    wb = load_workbook(path)
+    ws = wb.active
+    col = {str(c.value): c.column for c in ws[1] if c.value}
+    if "POC" not in col or "Company Name" not in col:
+        raise LookupError("sheet has no POC / Company Name columns")
+    for r in range(ws.max_row, 1, -1):
+        cell = lambda h: ws.cell(r, col[h]).value if h in col else None
+        if (str(cell("POC") or "").strip().lower(),
+                str(cell("Company Name") or "").strip().lower()) == key:
+            for h, v in updates.items():
+                if h in col:
+                    ws.cell(r, col[h]).value = v
+            row = {h: ws.cell(r, c).value for h, c in col.items()}
+            missing = _missing_of(row)
+            if "Missing Fields" in col:
+                ws.cell(r, col["Missing Fields"]).value = missing
+            fill = PatternFill("solid", fgColor="FFF2CC") if missing else PatternFill(fill_type=None)
+            for c in range(1, len(HEADERS) + 1):
+                ws.cell(r, c).fill = fill
+            wb.save(path)
+            return
+    raise LookupError("row not found in the sheet")
+
+
+def _update_in_open_excel(key, updates, path):
+    """Same, but inside the copy of the file that is open in desktop Excel."""
+    import pythoncom
+    import win32com.client
+    pythoncom.CoInitialize()
+    try:
+        try:
+            wb = win32com.client.GetObject(os.path.abspath(path))
+            ws = wb.Worksheets("Leads")
+        except Exception:
+            try:
+                ws = wb.Worksheets(1)
+            except Exception:
+                raise RuntimeError("workbook is locked but not open in desktop Excel")
+        if wb.ReadOnly:
+            raise RuntimeError("workbook is open read-only")
+        was_saved = bool(wb.Saved)
+        used = ws.UsedRange
+        top, left = used.Row, used.Column
+        ncols, nrows = used.Columns.Count, used.Rows.Count
+        data = ws.Range(ws.Cells(top, left), ws.Cells(top + nrows - 1, left + ncols - 1)).Value
+        header = [str(h) if h else "" for h in data[0]]
+        col = {h: i for i, h in enumerate(header) if h}      # 0-based within the used range
+        if "POC" not in col or "Company Name" not in col:
+            raise LookupError("sheet has no POC / Company Name columns")
+        for i in range(nrows - 1, 0, -1):
+            vals = data[i]
+            if (str(vals[col["POC"]] or "").strip().lower(),
+                    str(vals[col["Company Name"]] or "").strip().lower()) != key:
+                continue
+            r = top + i
+            row = {h: vals[c] for h, c in col.items()}
+            for h, v in updates.items():
+                if h in col:
+                    cell = ws.Cells(r, left + col[h])
+                    cell.NumberFormat = "@"
+                    cell.Value = v
+                    row[h] = v
+            missing = _missing_of(row)
+            if "Missing Fields" in col:
+                ws.Cells(r, left + col["Missing Fields"]).Value = missing
+            rng = ws.Range(ws.Cells(r, left), ws.Cells(r, left + min(ncols, len(HEADERS)) - 1))
+            if missing:
+                rng.Interior.Color = 255 + 242 * 256 + 204 * 65536
+            else:
+                rng.Interior.ColorIndex = -4142   # xlNone
+            if was_saved:
+                wb.Save()
+            return
+        raise LookupError("row not found in the sheet")
+    except (RuntimeError, LookupError):
+        raise
+    except Exception as e:
+        raise RuntimeError(f"Excel is busy ({type(e).__name__}); close any open cell/dialog") from None
+    finally:
+        pythoncom.CoUninitialize()
+
+
+def update_row_fields(key, updates, path=OUTPUT_FILE):
+    """Set `updates` ({header: value}) on the row whose (POC, Company) lower-case key is
+    `key`, and recompute Missing Fields + the yellow highlight. Looks in pending_rows.csv,
+    then the file, then the copy open in Excel. Returns 'pending' | 'file' | 'excel'.
+    Raises LookupError (row not found) or PermissionError (Excel busy)."""
+    if os.path.exists(PENDING_FILE):
+        with open(PENDING_FILE, newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        hits = [r for r in rows if _dedupe_key(r) == key]
+        if hits:
+            hits[-1].update(updates)
+            hits[-1]["Missing Fields"] = _missing_of(hits[-1])
+            with open(PENDING_FILE, "w", newline="", encoding="utf-8") as f:
+                w = csv.DictWriter(f, fieldnames=HEADERS)
+                w.writeheader()
+                for r in rows:
+                    w.writerow({h: r.get(h, "") for h in HEADERS})
+            return "pending"
+    try:
+        _update_in_file(key, updates, path)
+        return "file"
+    except PermissionError:
+        pass
+    try:
+        _update_in_open_excel(key, updates, path)
+        return "excel"
+    except RuntimeError as e:
+        raise PermissionError(str(e))
+
+
 def save_pending(row):
     new = not os.path.exists(PENDING_FILE)
     with open(PENDING_FILE, "a", newline="", encoding="utf-8") as f:
@@ -510,7 +675,7 @@ def clear_clipboard():
     return False
 
 
-_VK = {"ctrl": 0x11, "alt": 0x12, "shift": 0x10, "win": 0x5B}
+_VK = {"ctrl": 0x11, "alt": 0x12, "shift": 0x10, "win": 0x5B, "esc": 0x1B}
 _MOD_FLAG = {"alt": 0x1, "ctrl": 0x2, "shift": 0x4, "win": 0x8}
 
 
@@ -576,6 +741,36 @@ def auto_copy(send=None, read=None, clear=None, timeout=None):
         if text.strip() or time.monotonic() >= deadline:
             return html, text
         time.sleep(0.1)
+
+
+def copy_address_bar(send=None, read=None, clear=None, timeout=None):
+    """Copy the browser's address bar (Ctrl+L, Ctrl+C), then Esc to give the page its focus back.
+    Reads only the URL you are looking at; nothing is fetched. Returns the copied text."""
+    send = send or send_keys
+    read, clear = read or read_clipboard, clear or clear_clipboard
+    timeout = COPY_TIMEOUT if timeout is None else timeout
+    clear()
+    send("ctrl+l")
+    time.sleep(0.2)
+    send("ctrl+c")
+    deadline = time.monotonic() + timeout
+    text = ""
+    while True:
+        _, text = read()
+        if text.strip() or time.monotonic() >= deadline:
+            break
+        time.sleep(0.1)
+    send("esc")
+    return text.strip()
+
+
+def foreground_title():
+    """Title of the window in front (the browser tab title, e.g. 'Jane Doe | LinkedIn')."""
+    import ctypes
+    u = ctypes.windll.user32
+    buf = ctypes.create_unicode_buffer(512)
+    u.GetWindowTextW(u.GetForegroundWindow(), buf, 512)
+    return buf.value
 
 
 # ----------------------------------------------------------------------
@@ -786,6 +981,9 @@ def capture():
                "Open a contact profile, click an empty area of the page, then press the hotkey.")
         return
 
+    LAST_CAPTURE.clear()   # the LinkedIn hotkey attaches its URL to this person
+    LAST_CAPTURE.update(key=_dedupe_key(row), poc=row["POC"], company=row["Company Name"])
+
     keys, emails = existing_keys(OUTPUT_FILE)
     keys |= SESSION_KEYS   # rows written live into an unsaved Excel are not on disk yet
     if _dedupe_key(row) in keys or (row["Email ID"] and row["Email ID"].lower() in emails):
@@ -809,17 +1007,78 @@ def capture():
         status = f"Kept for later (Excel busy: {e})"
 
     if row["Missing Fields"]:
+        hint = ""
+        if "Linkedin Url" in row["Missing Fields"]:
+            hint = f"\nLinkedIn missing: click its icon, then press {HOTKEY.upper()} on that LinkedIn tab"
         notify("warn", f"{status}: {row['POC'] or 'unknown'}",
-               f"{row['Company Name']}\nMISSING: {row['Missing Fields']}")
+               f"{row['Company Name']}\nMISSING: {row['Missing Fields']}{hint}")
     else:
         notify("warn" if pending else "ok", f"{status}: {row['POC']}",
                f"{row['Company Name']} | {row['Email ID'] or '-'}")
 
 
+def linkedin_capture():
+    """On the person's LinkedIn tab: put the tab's URL into the row captured last."""
+    if not LAST_CAPTURE:
+        notify("error", "Capture the ZoomInfo profile first",
+               f"Press {HOTKEY.upper()} on the ZoomInfo profile, then open their LinkedIn and press "
+               f"{LINKEDIN_HOTKEY.upper()}.")
+        return
+    poc = LAST_CAPTURE["poc"]
+    raw = copy_address_bar()
+    company_url = normalize_linkedin_company_url(raw)
+    person_url = "" if company_url else normalize_linkedin_url(raw)
+    if company_url:   # the company's page -> "Company Linkedin Url"
+        field, url, who, label = "Company Linkedin Url", company_url, LAST_CAPTURE.get("company") or poc, "Company LinkedIn"
+    elif person_url:  # the person's page -> "POC Linkedin Url"
+        field, url, who, label = "POC Linkedin Url", person_url, poc, "LinkedIn"
+    else:
+        notify("error", "This tab is not a LinkedIn page",
+               f"Open {poc}'s (or their company's) LinkedIn page, then press the hotkey again.")
+        return
+    if not linkedin_matches_name(who, foreground_title() + " " + url):
+        again = _LI_REFUSED.get("url") == url and time.time() - _LI_REFUSED.get("t", 0) < 30
+        if not again:
+            _LI_REFUSED.update(url=url, t=time.time())
+            notify("error", f"Does this match {who}? Not saved", f"{url}\nThis tab does not look like "
+                   f"{who}. Press the hotkey again within 30 seconds to save it anyway.")
+            return
+    try:
+        update_row_fields(LAST_CAPTURE["key"], {field: url})
+    except LookupError as e:
+        notify("error", "Could not find the row", f"{poc}: {e}")
+        return
+    except PermissionError as e:
+        notify("error", "Excel is busy - LinkedIn not saved",
+               f"{e}. Close any open cell or dialog and press the hotkey again.")
+        return
+    _LI_REFUSED.clear()
+    notify("ok", f"{label} saved: {who}", url)
+
+
+def _on_linkedin_tab():
+    """True when the browser tab in front is a LinkedIn page ('Jane Doe | LinkedIn')."""
+    try:
+        return "linkedin" in foreground_title().lower()
+    except Exception:
+        return False
+
+
+def smart_capture():
+    """ONE hotkey for both jobs: on a LinkedIn tab it saves that tab's URL into the
+    last captured row; anywhere else it captures the ZoomInfo profile."""
+    if _on_linkedin_tab():
+        linkedin_capture()
+    else:
+        capture()
+
+
 def _on_hotkey(name, fn):
+    if name == "capture" and _on_linkedin_tab():
+        name = "linkedin"
     print(f"  [hotkey] {name}")
-    notify("info", "Capturing profile..." if name == "capture" else "Checking for duplicates...",
-           "Hotkey received. Keep this page in front.")
+    notify("info", {"capture": "Capturing profile...", "linkedin": "Reading LinkedIn address..."}.get(
+        name, "Checking for duplicates..."), "Hotkey received. Keep this page in front.")
     wait_keys_released()
     _run_once(fn)
 
@@ -865,6 +1124,8 @@ def main():
     else:
         print(f" Capture     : {HOTKEY.upper()}   (open profile -> Ctrl+A -> Ctrl+C -> hotkey)")
         print(f" Pre-check   : {PRECHECK_HOTKEY.upper()}   (copy results page -> hotkey, BEFORE opening profiles)")
+    print(f" LinkedIn    : click the LinkedIn icon, then press {HOTKEY.upper()} again on that LinkedIn tab "
+          f"(or {LINKEDIN_HOTKEY.upper()})")
     print(" Stop        : press Ctrl+C in this window")
     print("=" * 64)
     try:
@@ -877,7 +1138,8 @@ def main():
         notify("ok", "Capture helper is running",
                f"{HOTKEY.upper()} = capture | {PRECHECK_HOTKEY.upper()} = duplicate pre-check", sound=True)
     try:
-        hotkey_loop({HOTKEY: ("capture", capture), PRECHECK_HOTKEY: ("pre-check", precheck)})
+        hotkey_loop({HOTKEY: ("capture", smart_capture), PRECHECK_HOTKEY: ("pre-check", precheck),
+                     LINKEDIN_HOTKEY: ("linkedin", linkedin_capture)})
     except OSError as e:
         notify("error", "Hotkey not available", str(e))
         time.sleep(0.5)

@@ -21,6 +21,7 @@ FALLBACK_CAPTURE_HEADERS = (
 FALLBACK_IMPORTANT_FIELDS = (
     "Company Name", "Employees", "Industry", "Website", "Company Linkedin Url",
     "POC", "Job title", "Email ID", "Company Country", "Company Phone",
+    "POC Linkedin Url",
 )
 ZI_ID_HEADERS = ("ZoomInfo Contact ID", "ZoomInfo Company ID")
 MASTER_DATE_FORMAT = "%d-%m-%Y"  # same as zoominfo_capture.parse_profile
