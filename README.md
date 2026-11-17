@@ -35,7 +35,15 @@ press Ctrl+A, Ctrl+C before the hotkey. `POPUP = False` turns the popup off.
   "Company Linkedin Url" of the row with that Company Name. So you can do the LinkedIn
   steps in any order, even later. If no row matches the tab's name, nothing is saved
   and the popup says so (capture their ZoomInfo profile first).
+- A COMPANY's LinkedIn tab fills "Company Linkedin Url" for EVERY row of that company (all the
+  people you captured there), so you do it once per company. When you capture another person
+  of a company that already has its URL in the sheet, the URL is filled in automatically.
+- Company Phone is the (HQ) number only. A person's direct (D/B/O) line is never put there;
+  if the profile has no (HQ) number it is saved in Notes as "Direct phone: ..." and Company
+  Phone stays empty and is flagged.
 - Excel can stay open, even with unsaved changes: the tool edits the open window.
+- Missing Fields and the yellow colour are refreshed by the tool. If you type a value into
+  the sheet yourself, they do not update on their own.
 - `python check_links.py` shows whether ZoomInfo's copy contains LinkedIn links at all.
 - A link taken from the ZoomInfo copy is only accepted when it contains the person's
   name, so a "Similar Contacts" link can never land in the wrong row.

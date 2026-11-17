@@ -209,9 +209,12 @@ def parse_email(lines, website):
 
 
 def parse_phones(lines):
-    """Returns (company_phone, mobile_phone)."""
+    """Returns (company_phone, mobile_phone, direct_phone).
+    Company phone = the (HQ) number only. A direct/business/other line (D, B, O) belongs to the
+    PERSON, so it is returned separately and never placed in Company Phone. An untagged number
+    is used for Company Phone only when the profile has no tagged numbers at all."""
     sec = _section(lines, "Phone numbers", ["Location", "Tags", "About", "Similar Contacts"])
-    hq, mobile, other = "", "", ""
+    hq, mobile, other, direct = "", "", "", ""
     for i, ln in enumerate(sec):
         m = PHONE_RE.search(ln)
         if not m:
@@ -226,9 +229,11 @@ def parse_phones(lines):
             hq = phone
         elif tag == "M" and not mobile:
             mobile = phone
-        elif not other:
+        elif tag in ("D", "B", "O"):
+            direct = direct or phone
+        elif not tag and not other:
             other = phone
-    return hq or other, mobile
+    return hq or other, mobile, direct
 
 
 def parse_country(lines):
@@ -316,7 +321,7 @@ def parse_profile(text, html=""):
     industry = _value_after(lines, "Industry", _not_label)
     employees = _value_after(lines, "Employees", _looks_like_employees)
     email = parse_email(lines, website)
-    hq_phone, mobile = parse_phones(lines)
+    hq_phone, mobile, direct = parse_phones(lines)
     country = parse_country(lines)
     li_person, li_company = parse_linkedin(html, text, name)
 
@@ -336,7 +341,8 @@ def parse_profile(text, html=""):
         "POC Linkedin Url": li_person,
         "Call Status": "Not called",
         "Verified": "",
-        "Notes": "",
+        # The person's own line, kept for you but never mixed into Company Phone
+        "Notes": f"Direct phone: {direct}" if direct and not hq_phone else "",
     }
     missing = [f for f in IMPORTANT_FIELDS if not row.get(f)]
     row["Missing Fields"] = ", ".join(missing)
@@ -422,12 +428,8 @@ def write_rows_live(rows, path=OUTPUT_FILE):
     import win32com.client
     pythoncom.CoInitialize()
     try:
-        try:
-            # Finds the workbook by file path in whichever Excel window has it open
-            wb = win32com.client.GetObject(os.path.abspath(path))
-        except Exception:
-            raise RuntimeError("workbook is locked but not open in desktop Excel")
-        if not hasattr(wb, "Worksheets"):
+        wb = _find_open_workbook(path)   # finds it in whichever Excel window has it open
+        if wb is None:
             raise RuntimeError("workbook is locked but not open in desktop Excel")
         if wb.ReadOnly:
             raise RuntimeError("workbook is open read-only")
@@ -525,6 +527,13 @@ def pick_by_name(column, name, threshold=0.6):
     return pick
 
 
+def pick_all_by_name(column, name, threshold=0.8):
+    """Row chooser: EVERY row whose `column` matches `name` (all the people of one company)."""
+    def pick(rows):
+        return [i for i, r in enumerate(rows) if name_score(name, str(r.get(column) or "")) >= threshold]
+    return pick
+
+
 def linkedin_title_name(title):
     """'(3) Sahar Saadi | LinkedIn - Google Chrome' -> 'Sahar Saadi';
     'Sheikh Khalifa General Hospital: Overview | LinkedIn' -> 'Sheikh Khalifa General Hospital'."""
@@ -552,51 +561,89 @@ def _apply_row_update(get_row, set_cell, set_missing, set_fill, updates):
     return row
 
 
+def _indices(picked):
+    """A chooser may return one index, a list of indices, or None."""
+    if picked is None:
+        return []
+    return [picked] if isinstance(picked, int) else list(picked)
+
+
+def _find_open_workbook(path):
+    """The workbook `path` as open in a running desktop Excel, or None. Looks in Windows' list of
+    running objects, so it NEVER starts Excel or opens the file (GetObject(path) would, and
+    that could lock the file)."""
+    import pythoncom
+    import win32com.client
+    try:
+        rot = pythoncom.GetRunningObjectTable()
+        ctx = pythoncom.CreateBindCtx(0)
+        target = os.path.normcase(os.path.abspath(path))
+        for moniker in rot.EnumRunning():
+            try:
+                name = moniker.GetDisplayName(ctx, None)
+            except Exception:
+                continue
+            if os.path.normcase(name) == target:
+                disp = rot.GetObject(moniker).QueryInterface(pythoncom.IID_IDispatch)
+                wb = win32com.client.Dispatch(disp)
+                if hasattr(wb, "Worksheets"):
+                    return wb
+    except Exception:
+        pass
+    return None
+
+
+def _sheet_of(wb):
+    try:
+        return wb.Worksheets("Leads")
+    except Exception:
+        return wb.Worksheets(1)
+
+
 def _edit_in_file(pick, updates, path):
-    """Edit the closed file. LookupError if no row; PermissionError if Excel locks it."""
+    """Edit the closed file. LookupError if no row; PermissionError if Excel locks it.
+    Returns the list of updated rows."""
     from openpyxl import load_workbook
     from openpyxl.styles import PatternFill
     wb = load_workbook(path)
     ws = wb.active
     col = {str(c.value): c.column for c in ws[1] if c.value}
     rows = [{h: ws.cell(r, c).value for h, c in col.items()} for r in range(2, ws.max_row + 1)]
-    i = pick(rows)
-    if i is None:
+    picked = _indices(pick(rows))
+    if not picked:
         raise LookupError("no matching row in the sheet")
-    r = i + 2
     yellow = PatternFill("solid", fgColor="FFF2CC")
+    out = []
+    for i in picked:
+        r = i + 2
 
-    def set_cell(h, v):
-        ws.cell(r, col[h]).value = v
+        def set_cell(h, v, r=r):
+            ws.cell(r, col[h]).value = v
 
-    def set_missing(m):
-        if "Missing Fields" in col:
-            ws.cell(r, col["Missing Fields"]).value = m
+        def set_missing(m, r=r):
+            if "Missing Fields" in col:
+                ws.cell(r, col["Missing Fields"]).value = m
 
-    def set_fill(on):
-        for c in range(1, len(HEADERS) + 1):
-            ws.cell(r, c).fill = yellow if on else PatternFill(fill_type=None)
+        def set_fill(on, r=r):
+            for c in range(1, len(HEADERS) + 1):
+                ws.cell(r, c).fill = yellow if on else PatternFill(fill_type=None)
 
-    row = _apply_row_update(lambda: dict(rows[i]), set_cell, set_missing, set_fill, updates)
+        out.append(_apply_row_update(lambda i=i: dict(rows[i]), set_cell, set_missing, set_fill, updates))
     wb.save(path)
-    return row
+    return out
 
 
 def _edit_in_open_excel(pick, updates, path):
     """Edit the copy of the file that is open in desktop Excel. That window is the truth:
-    rows added there may not be saved to disk yet. Raises _NotInExcel if it is not open there."""
+    rows added there may not be saved to disk yet. Raises _NotInExcel if it is not open there.
+    Returns the list of updated rows."""
     import pythoncom
-    import win32com.client
     pythoncom.CoInitialize()
     try:
-        try:
-            wb = win32com.client.GetObject(os.path.abspath(path))
-            ws = wb.Worksheets("Leads")
-        except Exception:
-            try:
-                ws = wb.Worksheets(1)
-            except Exception:
-                raise _NotInExcel()
+        wb = _find_open_workbook(path)
+        if wb is None:
+            raise _NotInExcel()
+        ws = _sheet_of(wb)
         if wb.ReadOnly:
             raise RuntimeError("workbook is open read-only")
         was_saved = bool(wb.Saved)
@@ -606,33 +653,35 @@ def _edit_in_open_excel(pick, updates, path):
         data = ws.Range(ws.Cells(top, left), ws.Cells(top + nrows - 1, left + ncols - 1)).Value
         col = {str(h): i for i, h in enumerate(data[0]) if h}
         rows = [{h: data[k][c] for h, c in col.items()} for k in range(1, nrows)]
-        i = pick(rows)
-        if i is None:
+        picked = _indices(pick(rows))
+        if not picked:
             raise LookupError("no matching row in the sheet")
-        r = top + 1 + i
+        out = []
+        for i in picked:
+            r = top + 1 + i
 
-        def cell(h):
-            return ws.Cells(r, left + col[h])
+            def cell(h, r=r):
+                return ws.Cells(r, left + col[h])
 
-        def set_cell(h, v):
-            cell(h).NumberFormat = "@"
-            cell(h).Value = v
+            def set_cell(h, v, cell=cell):
+                cell(h).NumberFormat = "@"
+                cell(h).Value = v
 
-        def set_missing(m):
-            if "Missing Fields" in col:
-                cell("Missing Fields").Value = m
+            def set_missing(m, cell=cell):
+                if "Missing Fields" in col:
+                    cell("Missing Fields").Value = m
 
-        def set_fill(on):
-            rng = ws.Range(ws.Cells(r, left), ws.Cells(r, left + min(ncols, len(HEADERS)) - 1))
-            if on:
-                rng.Interior.Color = 255 + 242 * 256 + 204 * 65536
-            else:
-                rng.Interior.ColorIndex = -4142   # xlNone
+            def set_fill(on, r=r):
+                rng = ws.Range(ws.Cells(r, left), ws.Cells(r, left + min(ncols, len(HEADERS)) - 1))
+                if on:
+                    rng.Interior.Color = 255 + 242 * 256 + 204 * 65536
+                else:
+                    rng.Interior.ColorIndex = -4142   # xlNone
 
-        row = _apply_row_update(lambda: dict(rows[i]), set_cell, set_missing, set_fill, updates)
+            out.append(_apply_row_update(lambda i=i: dict(rows[i]), set_cell, set_missing, set_fill, updates))
         if was_saved:
             wb.Save()
-        return row
+        return out
     except (_NotInExcel, LookupError, RuntimeError):
         raise
     except Exception as e:
@@ -642,22 +691,24 @@ def _edit_in_open_excel(pick, updates, path):
 
 
 def edit_rows(pick, updates, path=OUTPUT_FILE):
-    """Change fields of the row chosen by `pick(rows) -> index|None` and refresh Missing Fields
-    and the yellow highlight. Order: pending_rows.csv, then the copy open in Excel, then the file.
-    Returns (where, row). Raises LookupError (no such row) or PermissionError (Excel busy)."""
+    """Change fields of the row(s) chosen by `pick(rows) -> index | [indexes] | None` and refresh
+    Missing Fields and the yellow highlight. Order: pending_rows.csv, then the copy open in Excel,
+    then the file. Returns (where, [updated rows]).
+    Raises LookupError (no such row) or PermissionError (Excel busy)."""
     if os.path.exists(PENDING_FILE):
         with open(PENDING_FILE, newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
-        i = pick(rows) if rows else None
-        if i is not None:
-            rows[i].update(updates)
-            rows[i]["Missing Fields"] = _missing_of(rows[i])
+        picked = _indices(pick(rows)) if rows else []
+        if picked:
+            for i in picked:
+                rows[i].update(updates)
+                rows[i]["Missing Fields"] = _missing_of(rows[i])
             with open(PENDING_FILE, "w", newline="", encoding="utf-8") as f:
                 w = csv.DictWriter(f, fieldnames=HEADERS)
                 w.writeheader()
                 for r in rows:
                     w.writerow({h: r.get(h, "") for h in HEADERS})
-            return "pending", rows[i]
+            return "pending", [rows[i] for i in picked]
     try:
         return "excel", _edit_in_open_excel(pick, updates, path)
     except _NotInExcel:
@@ -665,6 +716,45 @@ def edit_rows(pick, updates, path=OUTPUT_FILE):
     except RuntimeError as e:
         raise PermissionError(str(e))
     return "file", _edit_in_file(pick, updates, path)
+
+
+def read_sheet_rows(path=OUTPUT_FILE):
+    """Every row of the sheet as {header: value}: from the copy open in Excel if there is one
+    (it can be ahead of the file), else from the file. [] if neither can be read."""
+    try:
+        import pythoncom
+        pythoncom.CoInitialize()
+        try:
+            wb = _find_open_workbook(path)
+            if wb is not None:
+                used = _sheet_of(wb).UsedRange
+                data = used.Value
+                if data and len(data) > 1 and isinstance(data[0], tuple):
+                    col = {str(h): i for i, h in enumerate(data[0]) if h}
+                    return [{h: data[k][c] for h, c in col.items()} for k in range(1, len(data))]
+        finally:
+            pythoncom.CoUninitialize()
+    except Exception:
+        pass
+    try:
+        if os.path.exists(path):
+            from openpyxl import load_workbook
+            ws = load_workbook(path, read_only=True).active
+            it = ws.iter_rows(values_only=True)
+            header = [str(h) if h else "" for h in (next(it, None) or [])]
+            return [{h: v for h, v in zip(header, r) if h} for r in it]
+    except Exception:
+        pass
+    return []
+
+
+def known_company_linkedin(company, rows):
+    """The Company Linkedin Url already in the sheet for this company (latest row wins), or ''."""
+    for r in reversed(rows):
+        url = str(r.get("Company Linkedin Url") or "").strip()
+        if url and name_score(company, str(r.get("Company Name") or "")) >= 0.8:
+            return url
+    return ""
 
 
 def update_row_fields(key, updates, path=OUTPUT_FILE):
@@ -1068,6 +1158,18 @@ def capture():
         notify("dup", "Already in your sheet - skipped", f"{row['POC']} | {row['Company Name']}")
         return
 
+    # Same company already in your sheet with its LinkedIn page? Reuse it: no need to look it up again.
+    company_note = ""
+    if not row["Company Linkedin Url"] and row["Company Name"]:
+        try:
+            known = known_company_linkedin(row["Company Name"], read_sheet_rows())
+        except Exception:
+            known = ""
+        if known:
+            row["Company Linkedin Url"] = known
+            row["Missing Fields"] = _missing_of(row)
+            company_note = "Company LinkedIn reused from your sheet"
+
     if row["Missing Fields"] and SAVE_DEBUG_ON_MISSING:
         save_debug(text, html)
 
@@ -1088,11 +1190,13 @@ def capture():
         hint = ""
         if "Linkedin Url" in row["Missing Fields"]:
             hint = f"\nLinkedIn missing: click its icon, then press {HOTKEY.upper()} on that LinkedIn tab"
+        extra = f"\n{company_note}" if company_note else ""
         notify("warn", f"{status}: {row['POC'] or 'unknown'}",
-               f"{row['Company Name']}\nMISSING: {row['Missing Fields']}{hint}")
+               f"{row['Company Name']}\nMISSING: {row['Missing Fields']}{extra}{hint}")
     else:
+        extra = f"\n{company_note}" if company_note else ""
         notify("warn" if pending else "ok", f"{status}: {row['POC']}",
-               f"{row['Company Name']} | {row['Email ID'] or '-'}")
+               f"{row['Company Name']} | {row['Email ID'] or '-'}{extra}")
 
 
 def linkedin_capture():
@@ -1115,23 +1219,29 @@ def linkedin_capture():
     title = foreground_title()
     shown = linkedin_title_name(title)
     picks = []
-    if shown:
-        picks.append(pick_by_name(column, shown))
+    if shown:   # a company's page fills EVERY person of that company; a person's page fills that person
+        picks.append(pick_all_by_name(column, shown) if column == "Company Name"
+                     else pick_by_name(column, shown))
     if LAST_CAPTURE:
         last_name = LAST_CAPTURE.get("company" if column == "Company Name" else "poc") or ""
         if last_name and linkedin_matches_name(last_name, title + " " + url):
             picks.append(pick_by_key(LAST_CAPTURE["key"]))
     for pick in picks:
         try:
-            _, row = edit_rows(pick, {field: url})
+            _, rows = edit_rows(pick, {field: url})
         except LookupError:
             continue
         except PermissionError as e:
             notify("error", "Excel is busy - LinkedIn not saved",
                    f"{e}. Close any open cell or dialog and press the hotkey again.")
             return
-        who = f"{row.get('POC') or '?'} | {row.get('Company Name') or '?'}"
-        notify("ok", f"{label} saved", who + chr(10) + url)
+        if column == "Company Name":
+            people = ", ".join(str(r.get("POC") or "?") for r in rows[:4]) + (" ..." if len(rows) > 4 else "")
+            notify("ok", f"{label} saved for {len(rows)} row(s)",
+                   f"{rows[0].get('Company Name') or '?'}: {people}" + chr(10) + url)
+        else:
+            who = f"{rows[0].get('POC') or '?'} | {rows[0].get('Company Name') or '?'}"
+            notify("ok", f"{label} saved", who + chr(10) + url)
         return
     notify("error", f"No row for '{shown or 'this page'}' in your sheet - not saved",
            f"Capture their ZoomInfo profile first ({HOTKEY.upper()} on ZoomInfo), "
