@@ -1,0 +1,67 @@
+{
+  "_note": "Fictional data for MockClient. All domains use the reserved .example TLD. Shape is the agent's internal model, not the ZoomInfo API shape.",
+  "usage": {"remaining": 100, "limit": 100, "used": 0},
+  "radar_companies": [
+    {"company_id": "c-1001", "name": "Northwind Analytics", "website": "northwind-analytics.example", "employee_count": 250, "industry": "Software", "country": "United States", "employee_growth_1y_pct": 32.0, "last_funding_days_ago": 40, "last_funding_amount": 18000000},
+    {"company_id": "c-1007", "name": "Lumen Edtech", "website": "lumenedtech.example", "employee_count": 80, "industry": "Education", "country": "Canada", "employee_growth_1y_pct": 12.0, "last_funding_days_ago": 200, "last_funding_amount": 4000000},
+    {"company_id": "c-2001", "name": "Quillstone Robotics", "website": "quillstone.example", "employee_count": 140, "industry": "Software", "country": "United States", "employee_growth_1y_pct": 55.0, "last_funding_days_ago": null, "last_funding_amount": null},
+    {"company_id": "c-2002", "name": "Tidewater Bio", "website": "tidewaterbio.example", "employee_count": 95, "industry": "Healthcare", "country": "United Kingdom", "employee_growth_1y_pct": 8.0, "last_funding_days_ago": 20, "last_funding_amount": 9500000},
+    {"company_id": "c-2003", "name": "Granite Ledger", "website": "graniteledger.example", "employee_count": 600, "industry": "Financial Services", "country": "United States", "employee_growth_1y_pct": 27.0, "last_funding_days_ago": 75, "last_funding_amount": 42000000},
+    {"company_id": "c-2004", "name": "Old Oak Mills", "website": "oldoakmills.example", "employee_count": 1500, "industry": "Manufacturing", "country": "United States", "employee_growth_1y_pct": 2.0, "last_funding_days_ago": 900, "last_funding_amount": 1000000},
+    {"company_id": "c-2005", "name": "Tinyleaf Studio", "website": "tinyleaf.example", "employee_count": 12, "industry": "Software", "country": "United States", "employee_growth_1y_pct": 80.0, "last_funding_days_ago": 10, "last_funding_amount": 500000},
+    {"company_id": "c-2006", "name": "Mapleview Freight", "website": "mapleview.example", "employee_count": 320, "industry": "Transportation & Logistics", "country": "Canada", "employee_growth_1y_pct": 21.0, "last_funding_days_ago": null, "last_funding_amount": null}
+  ],
+  "companies": [
+    {"company_id": "c-1001", "company_name": "Northwind Analytics", "website": "northwind-analytics.example", "employee_count": 250, "industry": "Software", "country": "United States", "phone": "+1 555 0101 000", "linkedin_url": "https://www.linkedin.com/company/northwind-analytics-mock"},
+    {"company_id": "c-1002", "company_name": "Bluepeak Logistics", "website": "bluepeak-logistics.example", "employee_count": 1200, "industry": "Transportation & Logistics", "country": "United States", "phone": "+1 555 0102 000", "linkedin_url": "https://www.linkedin.com/company/bluepeak-logistics-mock"},
+    {"company_id": "c-1003", "company_name": "Crestline Health", "website": "crestlinehealth.example", "employee_count": 400, "industry": "Healthcare", "country": "United Kingdom", "phone": "+44 20 5550 0103", "linkedin_url": "https://www.linkedin.com/company/crestline-health-mock"},
+    {"company_id": "c-1004", "company_name": "Vantage Retail Group", "website": "vantageretail.example", "employee_count": 900, "industry": "Retail", "country": "United States", "phone": "+1 555 0104 000", "linkedin_url": ""},
+    {"company_id": "c-1005", "company_name": "Orbital Payments", "website": "www.orbitalpay.example", "employee_count": 350, "industry": "Financial Services", "country": "United States", "phone": "+1 555 0105 000", "linkedin_url": ""},
+    {"company_id": "c-1006", "company_name": "Harborview Manufacturing", "website": "harborview-mfg.example", "employee_count": 3000, "industry": "Manufacturing", "country": "Germany", "phone": "+49 30 5550 0106", "linkedin_url": "https://www.linkedin.com/company/harborview-mfg-mock"},
+    {"company_id": "c-1007", "company_name": "Lumen Edtech", "website": "lumenedtech.example", "employee_count": 80, "industry": "Education", "country": "Canada", "phone": "+1 555 0107 000", "linkedin_url": "https://www.linkedin.com/company/lumen-edtech-mock"},
+    {"company_id": "c-1008", "company_name": "Ironclad Security", "website": "ironclad-sec.example", "employee_count": 30, "industry": "Computer & Network Security", "country": "United States", "phone": "", "linkedin_url": ""},
+    {"company_id": "c-1009", "company_name": "Pinecrest Foods", "website": "pinecrestfoods.example", "employee_count": 600, "industry": "Food & Beverage", "country": "Australia", "phone": "+61 2 5550 0109", "linkedin_url": ""},
+    {"company_id": "c-1010", "company_name": "Silverline Consulting", "website": "silverline.example", "employee_count": 150, "industry": "Management Consulting", "country": "United States", "phone": "+1 555 0110 000", "linkedin_url": "https://www.linkedin.com/company/silverline-consulting-mock"}
+  ],
+  "contacts": [
+    {"contact_id": "9001001", "first_name": "Maya", "last_name": "Patel", "job_title": "Chief Executive Officer", "company_id": "c-1001", "accuracy_score": 95, "has_email": true, "has_direct_phone": true, "has_mobile_phone": false, "has_company_phone": true},
+    {"contact_id": "9001002", "first_name": "Daniel", "last_name": "Okafor", "job_title": "Chief Technology Officer", "company_id": "c-1001", "accuracy_score": 88, "has_email": true, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": true},
+    {"contact_id": "9001003", "first_name": "Laura", "last_name": "Chen", "job_title": "VP of Sales", "company_id": "c-1001", "accuracy_score": 91, "has_email": true, "has_direct_phone": true, "has_mobile_phone": true, "has_company_phone": true},
+    {"contact_id": "9001001", "first_name": "Maya", "last_name": "Patel", "job_title": "Chief Executive Officer", "company_id": "c-1001", "accuracy_score": 95, "has_email": true, "has_direct_phone": true, "has_mobile_phone": false, "has_company_phone": true, "_note": "same ID repeated in results"},
+    {"contact_id": "9001004", "first_name": "Ava", "last_name": "Thompson", "job_title": "Head of Marketing", "company_id": "c-1001", "accuracy_score": 64, "has_email": false, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": false},
+
+    {"contact_id": "9002001", "first_name": "Ethan", "last_name": "Brooks", "job_title": "Vice President Operations", "company_id": "c-1002", "accuracy_score": 82, "has_email": true, "has_direct_phone": true, "has_mobile_phone": false, "has_company_phone": true},
+    {"contact_id": "9002002", "first_name": "Sofia", "last_name": "Ramirez", "job_title": "Director of Sales", "company_id": "c-1002", "accuracy_score": 90, "has_email": true, "has_direct_phone": false, "has_mobile_phone": true, "has_company_phone": true},
+    {"contact_id": "9002003", "first_name": "Noah", "last_name": "Kim", "job_title": "Head of Marketing", "company_id": "c-1002", "accuracy_score": 76, "has_email": false, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": true},
+
+    {"contact_id": "9003001", "first_name": "Oliver", "last_name": "Hughes", "job_title": "Chief Executive Officer", "company_id": "c-1003", "accuracy_score": 79, "has_email": true, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": true},
+    {"contact_id": "9003002", "first_name": "Amelia", "last_name": "Ward", "job_title": "Founder and CEO", "company_id": "c-1003", "accuracy_score": 93, "has_email": false, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": false},
+    {"contact_id": "9003003", "first_name": "Grace", "last_name": "Lewis", "job_title": "Chief Operating Officer", "company_id": "c-1003", "accuracy_score": 85, "has_email": true, "has_direct_phone": true, "has_mobile_phone": false, "has_company_phone": true},
+    {"contact_id": "9003004", "first_name": "Nathan", "last_name": "Price", "job_title": "Head of Marketing", "company_id": "c-1003", "accuracy_score": 55, "has_email": false, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": false},
+
+    {"contact_id": "9004001", "first_name": "Ryan", "last_name": "Foster", "job_title": "CEO", "company_id": "c-1004", "accuracy_score": 90, "has_email": true, "has_direct_phone": true, "has_mobile_phone": false, "has_company_phone": true},
+    {"contact_id": "9004002", "first_name": "Chloe", "last_name": "Bennett", "job_title": "Chief Marketing Officer", "company_id": "c-1004", "accuracy_score": 84, "has_email": true, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": true},
+
+    {"contact_id": "9005001", "first_name": "Marcus", "last_name": "Reed", "job_title": "Chief Financial Officer", "company_id": "c-1005", "accuracy_score": 87, "has_email": true, "has_direct_phone": true, "has_mobile_phone": false, "has_company_phone": true},
+    {"contact_id": "9005002", "first_name": "Priya", "last_name": "Nair", "job_title": "VP Engineering", "company_id": "c-1005", "accuracy_score": 80, "has_email": true, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": true},
+
+    {"contact_id": "9006001", "first_name": "Lukas", "last_name": "Weber", "job_title": "Managing Director", "company_id": "c-1006", "accuracy_score": 89, "has_email": true, "has_direct_phone": true, "has_mobile_phone": false, "has_company_phone": true},
+    {"contact_id": "9006002", "first_name": "Hannah", "last_name": "Schmidt", "job_title": "Head of Sales", "company_id": "c-1006", "accuracy_score": 72, "has_email": false, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": false},
+
+    {"contact_id": "9007001", "first_name": "Jordan", "last_name": "Taylor", "job_title": "Co-Founder", "company_id": "c-1007", "accuracy_score": 86, "has_email": true, "has_direct_phone": false, "has_mobile_phone": true, "has_company_phone": true},
+    {"contact_id": "9007002", "first_name": "Emily", "last_name": "Clarke", "job_title": "Executive Assistant to the CEO", "company_id": "c-1007", "accuracy_score": 92, "has_email": true, "has_direct_phone": true, "has_mobile_phone": false, "has_company_phone": true},
+    {"contact_id": "9007003", "first_name": "Ben", "last_name": "Martin", "job_title": "Marketing Manager", "company_id": "c-1007", "accuracy_score": 70, "has_email": true, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": true},
+    {"contact_id": "9007004", "first_name": "Leo", "last_name": "Harris", "job_title": "Chief Executive Officer", "company_id": "c-1007", "accuracy_score": 58, "has_email": false, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": true},
+
+    {"contact_id": "9008001", "first_name": "Alex", "last_name": "Morgan", "job_title": "CEO", "company_id": "c-1008", "accuracy_score": 83, "has_email": true, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": false},
+    {"contact_id": "9008002", "first_name": "Sam", "last_name": "Rivera", "job_title": "Security Engineer", "company_id": "c-1008", "accuracy_score": 75, "has_email": true, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": false},
+
+    {"contact_id": "9009001", "first_name": "Olivia", "last_name": "Scott", "job_title": "Software Engineer", "company_id": "c-1009", "accuracy_score": 88, "has_email": true, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": true},
+    {"contact_id": "9009002", "first_name": "Jack", "last_name": "Wilson", "job_title": "Accountant", "company_id": "c-1009", "accuracy_score": 81, "has_email": true, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": true},
+
+    {"contact_id": "9010001", "first_name": "Isabella", "last_name": "Turner", "job_title": "VP Sales", "company_id": "c-1010", "accuracy_score": 78, "has_email": true, "has_direct_phone": true, "has_mobile_phone": false, "has_company_phone": true},
+    {"contact_id": "9010002", "first_name": "Henry", "last_name": "Adams", "job_title": "Vice President of Sales", "company_id": "c-1010", "accuracy_score": 91, "has_email": true, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": true, "mock_email": "h.adams@silverline-old.example"},
+    {"contact_id": "9010099", "first_name": "Henry", "last_name": "Adams", "job_title": "Vice President, Sales", "company_id": "c-1010", "accuracy_score": 60, "has_email": true, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": true, "_note": "same person, different ID (name+company duplicate)"},
+    {"contact_id": "9010004", "first_name": "Mia", "last_name": "Collins", "job_title": "Business Analyst", "company_id": "c-1010", "accuracy_score": 74, "has_email": true, "has_direct_phone": false, "has_mobile_phone": false, "has_company_phone": true}
+  ]
+}

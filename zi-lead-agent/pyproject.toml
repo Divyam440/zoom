@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zi-lead-agent"
+version = "0.1.0"
+description = "Scheduled helper that prepares ZoomInfo lead-research work (official API only)."
+requires-python = ">=3.11"
+dependencies = ["openpyxl>=3.1", "PyYAML>=6.0"]
+
+[project.scripts]
+zi-agent = "zi_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+zi_agent = ["fixtures/*.json"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

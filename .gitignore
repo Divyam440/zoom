@@ -1,0 +1,19 @@
+# Lead data: contains real contact details. Never commit.
+*.xlsx
+*.csv
+pending_rows.csv
+debug_captures/
+my_copy.txt
+capture_log.csv
+
+# Secrets
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/

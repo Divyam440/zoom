@@ -1,0 +1,62 @@
+{
+  "token": {"access_token": "test-token-abc", "expires_in": 1000, "scope": "api:data:contact", "token_type": "Bearer"},
+
+  "contact_search_page1": {
+    "data": [
+      {"id": "9001001", "type": "Contact", "attributes": {
+        "firstName": "Maya", "middleName": "", "lastName": "Patel", "jobTitle": "Chief Executive Officer",
+        "contactAccuracyScore": 95, "managementLevel": ["C-Level"],
+        "company": {"id": 1001, "name": "Northwind Analytics"},
+        "hasEmail": true, "hasDirectPhone": true, "hasMobilePhone": false, "hasCompanyPhone": true,
+        "hasSupplementalEmail": false, "hasCompanyCountry": true, "hasCompanyEmployeeCount": true}},
+      {"id": "9002002", "type": "Contact", "attributes": {
+        "firstName": "Sofia", "lastName": "Ramirez", "jobTitle": "Director of Sales",
+        "contactAccuracyScore": 90, "company": {"id": 1002, "name": "Bluepeak Logistics"},
+        "hasEmail": true, "hasDirectPhone": false, "hasMobilePhone": true, "hasCompanyPhone": true}}
+    ],
+    "meta": {"totalResults": 3, "page": {"number": 1, "size": 2}},
+    "links": {"first": "x", "last": "y", "prev": null, "next": "page2"}
+  },
+
+  "contact_search_page2": {
+    "data": [
+      {"id": "9010002", "type": "Contact", "attributes": {
+        "firstName": "Henry", "lastName": "Adams", "jobTitle": "Vice President of Sales",
+        "contactAccuracyScore": 91, "company": {"id": 1010, "name": "Silverline Consulting"},
+        "hasEmail": true, "hasDirectPhone": false, "hasMobilePhone": false, "hasCompanyPhone": true}}
+    ],
+    "meta": {"totalResults": 3, "page": {"number": 2, "size": 2}},
+    "links": {"first": "x", "last": "y", "prev": "page1", "next": null}
+  },
+
+  "enrich": {
+    "data": [
+      {"id": "9001001", "type": "Contact", "meta": {"matchStatus": "FULL_MATCH"}, "attributes": {
+        "firstName": "Maya", "lastName": "Patel", "jobTitle": "Chief Executive Officer",
+        "email": "maya.patel@northwind-analytics.example", "phone": "+1 555 0199 001",
+        "mobilePhone": "", "companyId": 1001, "companyName": "Northwind Analytics",
+        "companyWebsite": "www.northwind-analytics.example", "companyEmployeeCount": 250,
+        "companyPrimaryIndustry": {"name": "Software"}, "companyPhone": "+1 555 0101 000",
+        "country": "United States", "companyCountry": "United States",
+        "externalUrls": [{"type": "linkedin.com", "url": "https://www.linkedin.com/in/maya-patel-mock"}],
+        "companySocialMediaUrls": [{"type": "LINKED_IN", "url": "https://www.linkedin.com/company/northwind-mock"}]}},
+      {"id": "", "type": "NoMatch", "meta": {"matchStatus": "NO_MATCH"}, "attributes": {}}
+    ]
+  },
+
+  "usage": {
+    "data": [{"type": "Usage", "id": "u1", "attributes": {"usage": [
+      {"limitType": "request", "description": "API requests", "totalLimit": 100000, "currentUsage": 120, "usageRemaining": 99880},
+      {"limitType": "record", "description": "Records", "totalLimit": 100, "currentUsage": 7, "usageRemaining": 93},
+      {"limitType": "uniqueID", "description": "Unique IDs", "totalLimit": 1000, "currentUsage": 3, "usageRemaining": 997}
+    ]}}]
+  },
+
+  "company_search": {
+    "data": [
+      {"id": "2001", "type": "Company", "attributes": {"name": "Quillstone Robotics", "website": "quillstone.example",
+        "employeeCount": 140, "country": "United States", "city": "Austin", "state": "Texas", "revenue": 20000}}
+    ],
+    "meta": {"totalResults": 1}, "links": {"next": null}
+  }
+}

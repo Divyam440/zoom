@@ -1,0 +1,127 @@
+# zi-lead-agent configuration (documented example).
+# Copy to config.yaml and edit. Relative paths are relative to THIS folder.
+
+# Live enrichment needs ALL of: the --live flag, this set to true, and room in
+# the caps below. Leave false until Milestone 4 is verified.
+enrich_enabled: false
+
+paths:
+  master_sheet_path: ../leads_master.xlsx       # written by zoominfo_capture.py
+  pending_rows_path: ../pending_rows.csv        # capture tool's "Excel was open" rows
+  capture_tool_path: ../zoominfo_capture.py     # HEADERS are read from here
+  agent_workbook_path: ../lead_agent.xlsx       # To-View Queue + other agent tabs (live)
+  mock_workbook_path: out/lead_agent.mock.xlsx  # same tabs, dry-run only
+  enrich_pending_path: out/enriched_pending.csv # enriched rows kept here if the master is open in Excel
+  mock_fixtures_path: ""                        # empty = bundled fixtures
+  logs_dir: logs                                # agent.log + api_calls.csv
+  reports_dir: reports                          # weekly markdown reports (M2)
+  capture_log_path: ../capture_log.csv          # optional timing input (M2)
+  env_file: .env                                # secrets; git-ignored
+
+search:
+  # Internal filter names. ZoomInfoClient maps them to API request fields.
+  # TODO(verify) in Milestone 4: mapping to the official contact search fields.
+  filters:
+    job_titles: [CEO, Founder, Managing Director, VP Sales, Head of Sales]
+    countries: [United States, United Kingdom, Canada, Australia]
+    employee_min: 50
+    employee_max: 2000
+    industries: []
+  max_results: 1000   # free; deeper paging keeps the queue full (~95 views/day)
+
+# Ordered best -> worst. Each line is a group of aliases with the same rank.
+# Matching ignores case, punctuation and the words of/the/and/for, and needs
+# whole words ("VP of Sales" matches "VP Sales").
+title_priority:
+  - [CEO, Chief Executive Officer]
+  - [Founder, Co-Founder, Cofounder]
+  - [Managing Director]
+  - [COO, Chief Operating Officer]
+  - [CTO, Chief Technology Officer]
+  - [CMO, Chief Marketing Officer]
+  - [CFO, Chief Financial Officer]
+  - [VP Sales, Vice President Sales, VP Business Development]
+  - [Head Sales, Director Sales, Sales Director]
+  - [VP Marketing, Vice President Marketing, Head Marketing, Marketing Director, Director Marketing]
+  - [VP Operations, Vice President Operations]
+
+# Titles containing any of these words are never picked.
+title_exclude: [assistant, intern, former, retired]
+
+# Compared case-insensitively with the contact's country as ZoomInfo shows it.
+allowed_countries: [United States, United Kingdom, Canada, Australia]
+
+employee_range:
+  min: 50
+  max: 2000
+
+blocklist:
+  companies: [Vantage Retail Group]   # legal suffixes (Inc, Ltd, ...) are ignored
+  domains: [orbitalpay.example]       # subdomains are blocked too
+
+dedupe:
+  # One POC per company overall: skip companies already in the master sheet.
+  skip_companies_in_master: true
+
+caps:
+  max_enrich_per_run: 1      # first live run is limited to 1 record
+  max_enrich_per_day: 5
+  reserve: 20                # stop when remaining bulk credits would drop below this
+  enrich_top_n: 1            # how many top queue rows to try to enrich
+  max_requests_per_second: 2 # API allows 25/s; stay far below
+
+scoring:
+  # Relative weights; the score is scaled to 0-100.
+  weights:
+    title: 35            # rank in title_priority
+    email_hint: 20       # search says an email exists
+    phone_hint: 10       # direct/mobile = full, company phone only = half
+    accuracy: 15         # ZoomInfo accuracy score / 100
+    size_in_range: 10    # employee count inside employee_range
+    country_allowed: 10  # country in allowed_countries
+  new_company_boost: 10  # added for companies flagged by the weekly radar
+
+radar:
+  # A company qualifies if it meets the size/industry/country filters AND
+  # (growth >= minimum OR funding inside the date/amount window).
+  # Internal names; TODO(verify) mapping to the official company search fields in M4.
+  filters:
+    employee_growth_1y_min_pct: 20
+    funded_within_days: 365        # or funding_date_from / funding_date_to (YYYY-MM-DD)
+    funding_amount_min: 1000000
+    funding_amount_max: 100000000
+    industries: []                 # empty = any
+    countries: [United States, United Kingdom, Canada, Australia]
+    employee_min: 50
+    employee_max: 2000
+  max_results: 100
+  boost_days: 30                   # daily queue boost lasts this long after First Seen
+
+# Daily summary sent to YOU after run-daily (counts and pacing only; no
+# contact names, emails or phones). Sent on live runs, or with --notify.
+notify:
+  channel: none                         # none | slack | email
+  slack_webhook_env: ZI_SLACK_WEBHOOK_URL  # put the webhook URL in .env
+  email:
+    smtp_host: ""                       # e.g. smtp.office365.com / smtp.gmail.com
+    smtp_port: 587
+    use_tls: true
+    from_addr: ""
+    to_addr: ""                         # your own address
+    username_env: ZI_SMTP_USERNAME      # values go in .env
+    password_env: ZI_SMTP_PASSWORD
+
+timing:
+  break_minutes: 10   # capture_log.csv gaps longer than this count as breaks
+
+# Live API settings (official API; see README "Verified API facts").
+zoominfo:
+  usage_limit_type: record     # usage bucket treated as bulk credits. TODO(verify)
+  enrich_output_fields: []     # empty = built-in list
+  # Exact Contact/Company Search attributes from the docs. These override the
+  # mapping of search.filters / radar.filters (use if a value format differs).
+  contact_search_attributes: {}
+  company_search_attributes: {}
+
+monthly_view_budget: 2000
+working_days_per_month: 21
