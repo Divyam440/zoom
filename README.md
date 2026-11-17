@@ -30,8 +30,13 @@ press Ctrl+A, Ctrl+C before the hotkey. `POPUP = False` turns the popup off.
    "POC Linkedin Url" from Missing Fields (the yellow goes away when nothing else is missing).
 - Works with the Excel file open or closed.
 - It only reads the address bar of the tab you are looking at. It never reads the LinkedIn page.
-- Safety: if the tab does not look like that person (name not in the tab title or URL),
-  nothing is saved; press the hotkey again within 30 seconds to save it anyway.
+- The tool finds the right row by the NAME in the LinkedIn tab title, not by "last captured":
+  a person's tab fills "POC Linkedin Url" of the row with that POC, a company's tab fills
+  "Company Linkedin Url" of the row with that Company Name. So you can do the LinkedIn
+  steps in any order, even later. If no row matches the tab's name, nothing is saved
+  and the popup says so (capture their ZoomInfo profile first).
+- Excel can stay open, even with unsaved changes: the tool edits the open window.
+- `python check_links.py` shows whether ZoomInfo's copy contains LinkedIn links at all.
 - A link taken from the ZoomInfo copy is only accepted when it contains the person's
   name, so a "Similar Contacts" link can never land in the wrong row.
 

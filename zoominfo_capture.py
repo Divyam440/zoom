@@ -73,7 +73,6 @@ LI_ADDRESS_RE = re.compile(r"(?:https?://)?(?:[a-z0-9-]+\.)?linkedin\.com/in/([^
 
 SESSION_KEYS = set()   # (poc, company) captured this session, for duplicate checks
 LAST_CAPTURE = {}      # the person captured last: key, poc, company
-_LI_REFUSED = {}       # last LinkedIn URL that did not look like LAST_CAPTURE's person
 
 # Words that are UI labels, never real values
 UI_LABELS = {
@@ -477,37 +476,115 @@ def _missing_of(row):
     return ", ".join(f for f in IMPORTANT_FIELDS if not str(row.get(f) or "").strip())
 
 
-def _update_in_file(key, updates, path):
-    """Change fields of the row `key` in the closed file. LookupError if not found;
-    PermissionError if Excel has the file open."""
+# Words that say little about WHICH company/person it is; ignored when comparing names.
+_GENERIC_WORDS = {"hospital", "clinic", "group", "company", "co", "ltd", "llc", "inc", "limited",
+                  "the", "of", "and", "for", "health", "healthcare", "medical", "center", "centre",
+                  "dr", "mr", "mrs", "ms"}
+
+
+def _name_words(s):
+    words = []
+    for t in _fold(s):
+        if len(t) > 3 and t.endswith("s"):
+            t = t[:-1]                      # hospitals -> hospital
+        words.append(t)
+    core = [w for w in words if w not in _GENERIC_WORDS]
+    return set(core or words)
+
+
+def name_score(a, b):
+    """0..1: how much of the shorter name is contained in the other (word based)."""
+    A, B = _name_words(a), _name_words(b)
+    return len(A & B) / min(len(A), len(B)) if A and B else 0.0
+
+
+def pick_by_key(key):
+    """Row chooser: the last row whose (POC, Company Name) equals `key`."""
+    want = tuple(" ".join(_fold(k)) for k in key)
+
+    def pick(rows):
+        for i in range(len(rows) - 1, -1, -1):
+            have = (" ".join(_fold(str(rows[i].get("POC") or ""))),
+                    " ".join(_fold(str(rows[i].get("Company Name") or ""))))
+            if have == want:
+                return i
+        return None
+    return pick
+
+
+def pick_by_name(column, name, threshold=0.6):
+    """Row chooser: the row whose `column` ('POC' or 'Company Name') best matches `name`;
+    a tie goes to the later row."""
+    def pick(rows):
+        best, best_s = None, 0.0
+        for i, r in enumerate(rows):
+            s = name_score(name, str(r.get(column) or ""))
+            if s >= threshold and s >= best_s:
+                best, best_s = i, s
+        return best
+    return pick
+
+
+def linkedin_title_name(title):
+    """'(3) Sahar Saadi | LinkedIn - Google Chrome' -> 'Sahar Saadi';
+    'Sheikh Khalifa General Hospital: Overview | LinkedIn' -> 'Sheikh Khalifa General Hospital'."""
+    t = re.sub(r"^\(\d+\+?\)\s*", "", title or "").strip()
+    t = re.split(r"\s*\|\s*LinkedIn", t, flags=re.I)[0]
+    t = re.split(r"\s+-\s+", t)[0]
+    return t.split(":")[0].strip()
+
+
+class _NotInExcel(Exception):
+    pass
+
+
+def _apply_row_update(get_row, set_cell, set_missing, set_fill, updates):
+    """Shared by the file and Excel editors: write `updates`, then recompute
+    Missing Fields and the yellow highlight. Returns the updated row dict."""
+    row = get_row()
+    for h, v in updates.items():
+        if h in row:
+            set_cell(h, v)
+            row[h] = v
+    missing = _missing_of(row)
+    set_missing(missing)
+    set_fill(bool(missing))
+    return row
+
+
+def _edit_in_file(pick, updates, path):
+    """Edit the closed file. LookupError if no row; PermissionError if Excel locks it."""
     from openpyxl import load_workbook
     from openpyxl.styles import PatternFill
     wb = load_workbook(path)
     ws = wb.active
     col = {str(c.value): c.column for c in ws[1] if c.value}
-    if "POC" not in col or "Company Name" not in col:
-        raise LookupError("sheet has no POC / Company Name columns")
-    for r in range(ws.max_row, 1, -1):
-        cell = lambda h: ws.cell(r, col[h]).value if h in col else None
-        if (str(cell("POC") or "").strip().lower(),
-                str(cell("Company Name") or "").strip().lower()) == key:
-            for h, v in updates.items():
-                if h in col:
-                    ws.cell(r, col[h]).value = v
-            row = {h: ws.cell(r, c).value for h, c in col.items()}
-            missing = _missing_of(row)
-            if "Missing Fields" in col:
-                ws.cell(r, col["Missing Fields"]).value = missing
-            fill = PatternFill("solid", fgColor="FFF2CC") if missing else PatternFill(fill_type=None)
-            for c in range(1, len(HEADERS) + 1):
-                ws.cell(r, c).fill = fill
-            wb.save(path)
-            return
-    raise LookupError("row not found in the sheet")
+    rows = [{h: ws.cell(r, c).value for h, c in col.items()} for r in range(2, ws.max_row + 1)]
+    i = pick(rows)
+    if i is None:
+        raise LookupError("no matching row in the sheet")
+    r = i + 2
+    yellow = PatternFill("solid", fgColor="FFF2CC")
+
+    def set_cell(h, v):
+        ws.cell(r, col[h]).value = v
+
+    def set_missing(m):
+        if "Missing Fields" in col:
+            ws.cell(r, col["Missing Fields"]).value = m
+
+    def set_fill(on):
+        for c in range(1, len(HEADERS) + 1):
+            ws.cell(r, c).fill = yellow if on else PatternFill(fill_type=None)
+
+    row = _apply_row_update(lambda: dict(rows[i]), set_cell, set_missing, set_fill, updates)
+    wb.save(path)
+    return row
 
 
-def _update_in_open_excel(key, updates, path):
-    """Same, but inside the copy of the file that is open in desktop Excel."""
+def _edit_in_open_excel(pick, updates, path):
+    """Edit the copy of the file that is open in desktop Excel. That window is the truth:
+    rows added there may not be saved to disk yet. Raises _NotInExcel if it is not open there."""
     import pythoncom
     import win32com.client
     pythoncom.CoInitialize()
@@ -519,7 +596,7 @@ def _update_in_open_excel(key, updates, path):
             try:
                 ws = wb.Worksheets(1)
             except Exception:
-                raise RuntimeError("workbook is locked but not open in desktop Excel")
+                raise _NotInExcel()
         if wb.ReadOnly:
             raise RuntimeError("workbook is open read-only")
         was_saved = bool(wb.Saved)
@@ -527,36 +604,36 @@ def _update_in_open_excel(key, updates, path):
         top, left = used.Row, used.Column
         ncols, nrows = used.Columns.Count, used.Rows.Count
         data = ws.Range(ws.Cells(top, left), ws.Cells(top + nrows - 1, left + ncols - 1)).Value
-        header = [str(h) if h else "" for h in data[0]]
-        col = {h: i for i, h in enumerate(header) if h}      # 0-based within the used range
-        if "POC" not in col or "Company Name" not in col:
-            raise LookupError("sheet has no POC / Company Name columns")
-        for i in range(nrows - 1, 0, -1):
-            vals = data[i]
-            if (str(vals[col["POC"]] or "").strip().lower(),
-                    str(vals[col["Company Name"]] or "").strip().lower()) != key:
-                continue
-            r = top + i
-            row = {h: vals[c] for h, c in col.items()}
-            for h, v in updates.items():
-                if h in col:
-                    cell = ws.Cells(r, left + col[h])
-                    cell.NumberFormat = "@"
-                    cell.Value = v
-                    row[h] = v
-            missing = _missing_of(row)
+        col = {str(h): i for i, h in enumerate(data[0]) if h}
+        rows = [{h: data[k][c] for h, c in col.items()} for k in range(1, nrows)]
+        i = pick(rows)
+        if i is None:
+            raise LookupError("no matching row in the sheet")
+        r = top + 1 + i
+
+        def cell(h):
+            return ws.Cells(r, left + col[h])
+
+        def set_cell(h, v):
+            cell(h).NumberFormat = "@"
+            cell(h).Value = v
+
+        def set_missing(m):
             if "Missing Fields" in col:
-                ws.Cells(r, left + col["Missing Fields"]).Value = missing
+                cell("Missing Fields").Value = m
+
+        def set_fill(on):
             rng = ws.Range(ws.Cells(r, left), ws.Cells(r, left + min(ncols, len(HEADERS)) - 1))
-            if missing:
+            if on:
                 rng.Interior.Color = 255 + 242 * 256 + 204 * 65536
             else:
                 rng.Interior.ColorIndex = -4142   # xlNone
-            if was_saved:
-                wb.Save()
-            return
-        raise LookupError("row not found in the sheet")
-    except (RuntimeError, LookupError):
+
+        row = _apply_row_update(lambda: dict(rows[i]), set_cell, set_missing, set_fill, updates)
+        if was_saved:
+            wb.Save()
+        return row
+    except (_NotInExcel, LookupError, RuntimeError):
         raise
     except Exception as e:
         raise RuntimeError(f"Excel is busy ({type(e).__name__}); close any open cell/dialog") from None
@@ -564,34 +641,35 @@ def _update_in_open_excel(key, updates, path):
         pythoncom.CoUninitialize()
 
 
-def update_row_fields(key, updates, path=OUTPUT_FILE):
-    """Set `updates` ({header: value}) on the row whose (POC, Company) lower-case key is
-    `key`, and recompute Missing Fields + the yellow highlight. Looks in pending_rows.csv,
-    then the file, then the copy open in Excel. Returns 'pending' | 'file' | 'excel'.
-    Raises LookupError (row not found) or PermissionError (Excel busy)."""
+def edit_rows(pick, updates, path=OUTPUT_FILE):
+    """Change fields of the row chosen by `pick(rows) -> index|None` and refresh Missing Fields
+    and the yellow highlight. Order: pending_rows.csv, then the copy open in Excel, then the file.
+    Returns (where, row). Raises LookupError (no such row) or PermissionError (Excel busy)."""
     if os.path.exists(PENDING_FILE):
         with open(PENDING_FILE, newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
-        hits = [r for r in rows if _dedupe_key(r) == key]
-        if hits:
-            hits[-1].update(updates)
-            hits[-1]["Missing Fields"] = _missing_of(hits[-1])
+        i = pick(rows) if rows else None
+        if i is not None:
+            rows[i].update(updates)
+            rows[i]["Missing Fields"] = _missing_of(rows[i])
             with open(PENDING_FILE, "w", newline="", encoding="utf-8") as f:
                 w = csv.DictWriter(f, fieldnames=HEADERS)
                 w.writeheader()
                 for r in rows:
                     w.writerow({h: r.get(h, "") for h in HEADERS})
-            return "pending"
+            return "pending", rows[i]
     try:
-        _update_in_file(key, updates, path)
-        return "file"
-    except PermissionError:
+        return "excel", _edit_in_open_excel(pick, updates, path)
+    except _NotInExcel:
         pass
-    try:
-        _update_in_open_excel(key, updates, path)
-        return "excel"
     except RuntimeError as e:
         raise PermissionError(str(e))
+    return "file", _edit_in_file(pick, updates, path)
+
+
+def update_row_fields(key, updates, path=OUTPUT_FILE):
+    """Same as edit_rows for the row with (POC, Company) `key`; returns only 'pending'|'file'|'excel'."""
+    return edit_rows(pick_by_key(key), updates, path)[0]
 
 
 def save_pending(row):
@@ -1018,42 +1096,46 @@ def capture():
 
 
 def linkedin_capture():
-    """On the person's LinkedIn tab: put the tab's URL into the row captured last."""
-    if not LAST_CAPTURE:
-        notify("error", "Capture the ZoomInfo profile first",
-               f"Press {HOTKEY.upper()} on the ZoomInfo profile, then open their LinkedIn and press "
-               f"{LINKEDIN_HOTKEY.upper()}.")
-        return
-    poc = LAST_CAPTURE["poc"]
+    """On a LinkedIn tab: put the tab's URL into the right row of the sheet. A person's page goes
+    to 'POC Linkedin Url' of the row whose POC matches the tab's name; a company's page goes to
+    'Company Linkedin Url' of the row whose Company Name matches. The row captured last is only a
+    fallback, and only when it matches the tab too, so a URL can never land on the wrong person."""
     raw = copy_address_bar()
     company_url = normalize_linkedin_company_url(raw)
     person_url = "" if company_url else normalize_linkedin_url(raw)
-    if company_url:   # the company's page -> "Company Linkedin Url"
-        field, url, who, label = "Company Linkedin Url", company_url, LAST_CAPTURE.get("company") or poc, "Company LinkedIn"
-    elif person_url:  # the person's page -> "POC Linkedin Url"
-        field, url, who, label = "POC Linkedin Url", person_url, poc, "LinkedIn"
+    if company_url:
+        field, url, column, label = "Company Linkedin Url", company_url, "Company Name", "Company LinkedIn"
+    elif person_url:
+        field, url, column, label = "POC Linkedin Url", person_url, "POC", "LinkedIn"
     else:
-        notify("error", "This tab is not a LinkedIn page",
-               f"Open {poc}'s (or their company's) LinkedIn page, then press the hotkey again.")
+        notify("error", "This tab is not a LinkedIn profile or company page",
+               "Open the person's (linkedin.com/in/...) or company's (linkedin.com/company/...) page, "
+               "then press the hotkey again.")
         return
-    if not linkedin_matches_name(who, foreground_title() + " " + url):
-        again = _LI_REFUSED.get("url") == url and time.time() - _LI_REFUSED.get("t", 0) < 30
-        if not again:
-            _LI_REFUSED.update(url=url, t=time.time())
-            notify("error", f"Does this match {who}? Not saved", f"{url}\nThis tab does not look like "
-                   f"{who}. Press the hotkey again within 30 seconds to save it anyway.")
+    title = foreground_title()
+    shown = linkedin_title_name(title)
+    picks = []
+    if shown:
+        picks.append(pick_by_name(column, shown))
+    if LAST_CAPTURE:
+        last_name = LAST_CAPTURE.get("company" if column == "Company Name" else "poc") or ""
+        if last_name and linkedin_matches_name(last_name, title + " " + url):
+            picks.append(pick_by_key(LAST_CAPTURE["key"]))
+    for pick in picks:
+        try:
+            _, row = edit_rows(pick, {field: url})
+        except LookupError:
+            continue
+        except PermissionError as e:
+            notify("error", "Excel is busy - LinkedIn not saved",
+                   f"{e}. Close any open cell or dialog and press the hotkey again.")
             return
-    try:
-        update_row_fields(LAST_CAPTURE["key"], {field: url})
-    except LookupError as e:
-        notify("error", "Could not find the row", f"{poc}: {e}")
+        who = f"{row.get('POC') or '?'} | {row.get('Company Name') or '?'}"
+        notify("ok", f"{label} saved", who + chr(10) + url)
         return
-    except PermissionError as e:
-        notify("error", "Excel is busy - LinkedIn not saved",
-               f"{e}. Close any open cell or dialog and press the hotkey again.")
-        return
-    _LI_REFUSED.clear()
-    notify("ok", f"{label} saved: {who}", url)
+    notify("error", f"No row for '{shown or 'this page'}' in your sheet - not saved",
+           f"Capture their ZoomInfo profile first ({HOTKEY.upper()} on ZoomInfo), "
+           f"then press the hotkey on this LinkedIn tab again.")
 
 
 def _on_linkedin_tab():
