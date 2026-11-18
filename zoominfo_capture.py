@@ -954,6 +954,47 @@ def _same_file(a, b):
         return False
 
 
+def other_open_copies(path=None):
+    """Full paths of workbooks with the same name as the sheet (e.g. another leads_master.xlsx
+    from an old folder / Downloads) that are open in Excel but are NOT the file the tool saves to."""
+    path = path or OUTPUT_FILE
+    stem = os.path.splitext(os.path.basename(path))[0].lower()
+    found = []
+    try:
+        import pythoncom
+        pythoncom.CoInitialize()
+        try:
+            rot = pythoncom.GetRunningObjectTable()
+            ctx = pythoncom.CreateBindCtx(0)
+            for moniker in rot.EnumRunning():
+                try:
+                    name = moniker.GetDisplayName(ctx, None)
+                except Exception:
+                    continue
+                base = re.split(r"[\\/]", name)[-1].lower()
+                if base.startswith(stem) and base.endswith((".xlsx", ".xlsm", ".xls")) \
+                        and not _same_file(name, path):
+                    found.append(name)
+        finally:
+            pythoncom.CoUninitialize()
+    except Exception:
+        log_error("looking for other open copies failed")
+    return found
+
+
+def warn_wrong_copy_open():
+    """Popup if Excel shows a DIFFERENT leads_master file than the one the tool saves to
+    (the row is saved, just not in the window you are looking at). True if warned."""
+    others = other_open_copies()
+    if not others:
+        return False
+    print(f"  [!] Excel has another copy open: {others[0]}  (the tool saves to {OUTPUT_FILE})")
+    notify("warn", "Saved - but Excel shows a DIFFERENT file",
+           f"Saved to: {OUTPUT_FILE}\nExcel shows: {others[0]}\n"
+           f"Close that one and open the file above (or move the tool into that folder).")
+    return True
+
+
 def _find_open_workbook(path):
     """The workbook `path` as open in a running desktop Excel, or None. Looks in Windows' list of
     running objects, so it NEVER starts Excel or opens the file (GetObject(path) would, and
@@ -1577,6 +1618,9 @@ def capture():
         pending = True
         status = f"Kept for later (Excel busy: {e})"
 
+    print(f"       -> {OUTPUT_FILE}")
+    if warn_wrong_copy_open():
+        return
     if row["Missing Fields"]:
         hint = ""
         if "Linkedin Url" in row["Missing Fields"]:
@@ -1633,6 +1677,11 @@ def linkedin_capture():
         else:
             who = f"{rows[0].get('POC') or '?'} | {rows[0].get('Company Name') or '?'}"
             notify("ok", f"{label} saved", who + chr(10) + url)
+        print(f"       -> {OUTPUT_FILE}")
+        warn_wrong_copy_open()
+        return
+    print(f"  [!] LinkedIn: no row named '{shown}' in {OUTPUT_FILE} (tab title: {title!r})")
+    if warn_wrong_copy_open():
         return
     notify("error", f"No row for '{shown or 'this page'}' in your sheet - not saved",
            f"Capture their ZoomInfo profile first ({HOTKEY.upper()} on ZoomInfo), "
@@ -1748,6 +1797,7 @@ def main():
     print(" ZoomInfo Capture Helper is running")
     print(f" Output file : {os.path.abspath(OUTPUT_FILE)}")
     print(f" Safety copy : {JOURNAL_FILE}")
+    print("   (open THIS Output file in Excel - a leads_master.xlsx from another folder will not update)")
     if AUTO_COPY:
         print(f" Capture     : {HOTKEY.upper()}   (open profile -> click an empty area of the page -> hotkey)")
         print(f" Pre-check   : {PRECHECK_HOTKEY.upper()}   (open results page -> click empty area -> hotkey, BEFORE opening profiles)")
