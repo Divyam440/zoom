@@ -80,3 +80,27 @@ Paste a copied profile into `my_copy.txt` and run:
   The only keys it sends are Ctrl+A, Ctrl+C, and only right after you press the hotkey.
 - No ZoomInfo API call and no bulk credit is used by this tool.
 - Do not add auto-trigger on page load, auto-clicking or page scraping.
+
+## The Excel sheet
+- Layout is applied automatically: dark-blue header, frozen header row + Company Name column,
+  filter buttons, dropdowns for **Call Status** (Not called, No answer, Call back, Interested,
+  Not interested, Meeting booked, Wrong number) and **Verified** (Yes/No), clickable Website,
+  LinkedIn and Email cells, yellow rows = something missing. Column widths you change are kept.
+- Rows always go into the **Leads** tab, under the right heading, even if you switched tabs,
+  moved/inserted columns, or left formatted blank rows at the bottom.
+- When Excel is busy for a moment (autosave, recalculation) the tool waits and retries.
+- `python zoominfo_capture.py --tidy` (Excel closed) re-applies the layout to the whole sheet,
+  refreshes Missing Fields + yellow after you typed values by hand, and lists duplicate people.
+  This also runs by itself every time the tool starts while the sheet is closed.
+
+## Safety net (nothing gets lost)
+- Every capture (and every LinkedIn URL added later) is first written to `captured_log.csv`,
+  which is never deleted. All files live next to the script, whatever folder you start it from.
+- `backups/` keeps up to 50 copies of `leads_master.xlsx` (at most one per 5 minutes).
+- Saves are atomic: a crash or power cut while saving can't break the sheet. If the sheet is
+  ever damaged anyway, the tool keeps it as `leads_master.DAMAGED_<time>.xlsx`, puts the newest
+  backup back and re-adds every logged capture by itself.
+- Rows missing from the sheet? Close Excel, run `python zoominfo_capture.py --restore`.
+- Rows written into an open Excel window are saved right away. If Excel refuses to save, the
+  popup says "press Ctrl+S there".
+- Something went wrong? Full details are in `capture_errors.log`. Send that file when asking for help.
